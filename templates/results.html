@@ -1,0 +1,151 @@
+{% extends "skeleton.html" %}
+{% set active_page = 'results' -%}
+
+{% block body %}
+<div class="container base-container" style="margin-top: 2rem; margin-bottom: 2rem;">
+    <nav class="level">
+        <div class="level-item has-text-centered">
+            <div>
+                <p class="heading">Timestamp</p>
+                <p class="title">Yesterday</p>
+            </div>
+        </div>
+        <div class="level-item has-text-centered">
+            <div>
+                <p class="heading">Source</p>
+                <p class="title">
+                    {% if record.url %}
+                    <a class="icon" href="{{ record.url }}">
+                        <i class="fas fa-external-link-alt"></i>
+                    </a>
+                    {% else %}
+                    Uploaded
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+        <div class="level-item has-text-centered">
+            <div>
+                <p class="heading"># Results</p>
+                <p class="title">{{ record.videos|length }}</p>
+            </div>
+        </div>
+        <div class="level-item has-text-centered">
+            <div>
+                <p class="heading">Best Loopifi Score</p>
+                <p class="title">{{ (maxScore * 100.0)|int }}%</p>
+            </div>
+        </div>
+    </nav>
+
+    {% for video in record.videos %}
+    <div class="tabs"
+         id="tabs-{{ loop.index }}">
+        <ul>
+            <li class="is-active"
+                data-id="{{ loop.index }}"
+                data-format="webm">
+                <a>.video</a>
+            </li>
+            <li data-id="{{ loop.index }}"
+                data-format="gif">
+                <a>.gif</a>
+            </li>
+        </ul>
+    </div>
+
+    <div class="columns"
+         id="videos-{{ loop.index }}">
+        <div class="column is-half video"
+             id="video-format-gif-{{ loop.index }}"
+             style="display: none;">
+            <img src="{{ url_for('static', filename='res/' ~ record.id + '/Loops/' + video.gif_location) }}" type='image/gif'>
+        </div>
+
+        <div class="column is-half video"
+             id="video-format-webm-{{ loop.index }}">
+            <video class=""
+                   loop="true"
+                   controls
+                   preload="auto"
+                   width=""
+                   height=""
+                   poster="">
+                <source src="{{ url_for('static', filename='res/' ~ record.id + '/Loops/' + video.webm_location) }}" type='video/webm'>
+                <source src="{{ url_for('static', filename='res/' ~ record.id + '/Loops/' + video.mp4_location) }}" type='video/mp4'>
+            </video>
+        </div>
+        
+        <div class="column is-half">
+            <div class="panel">
+                <p class="panel-heading">
+                    Match #{{ loop.index }}
+                </p>
+                <div class="panel-block">
+                    <span class="panel-icon">
+                        <i class="fas fa-star" aria-hidden="true"></i>
+                    </span>
+                    Loopifi Rating:&nbsp;<b>{{ (video.score * 100.0)|int }}</b>
+                </div>
+                <div class="panel-block">
+                    <span class="panel-icon">
+                        <i class="fas fa-hourglass-start" aria-hidden="true"></i>
+                    </span>
+                    Start:&nbsp;<b>{{ video.start_frame }}</b>
+                </div>
+                <div class="panel-block">
+                    <span class="panel-icon">
+                        <i class="fas fa-hourglass-end" aria-hidden="true"></i>
+                    </span>
+                    End:&nbsp;<b>{{ video.end_frame }}</b>
+                </div>
+                <a class="panel-block" href="{{ url_for('static', filename='res/' ~ record.id + '/Loops/' + video.webm_location) }}" download>
+                    <span class="panel-icon">
+                        <i class="fas fa-download" aria-hidden="true"></i>
+                    </span>
+                    Download WEBM
+                </a>
+                <a class="panel-block" href="{{ url_for('static', filename='res/' ~ record.id + '/Loops/' + video.mp4_location) }}" download>
+                    <span class="panel-icon">
+                        <i class="fas fa-download" aria-hidden="true"></i>
+                    </span>
+                    Download MP4
+                </a>
+                <a class="panel-block" href="{{ url_for('static', filename='res/' ~ record.id + '/Loops/' + video.gif_location) }}" download>
+                    <span class="panel-icon">
+                        <i class="fas fa-download" aria-hidden="true"></i>
+                    </span>
+                    Download GIF
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% endfor %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+ $(document).ready(function() {
+     $('.tabs li').click(function() {
+         var el = $(this);
+         var id = el.data('id');
+         var format = el.data('format');
+
+         // remove all `is-active` from the relevant set of tabs
+         $('#tabs-' + id + ' li').removeClass('is-active');
+
+         // add `is-active` to the clicked tab
+         el.addClass('is-active');
+
+         // hide all videos
+         $('#videos-' + id + ' .video').hide();
+
+         // show the appropriate video format
+         $('#video-format-' + format + '-' + id).show();
+     });
+ });
+</script>
+{% endblock %}

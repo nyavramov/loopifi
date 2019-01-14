@@ -1,0 +1,41 @@
+{% extends "skeleton.html" %}
+{% set active_page = 'waiting' -%}
+
+{% block body %}
+
+<section class="hero is-medium base-container">
+    <div class="hero-body">
+        <div class="container restricted">
+            <h1 class="title has-text-centered">
+                Our parrot is working on your loops!
+            </h1>
+            <figure>
+                <img style="position: relative; height: 70px;" src="{{ url_for('static', filename=parrot) }}">
+            </figure>
+            <h2 class="subtitle has-text-centered">
+                Status: {{ job.status }}
+                {% if position %} (Position: {{ position }}) {% endif %}
+            </h2>
+            <progress class="progress is-primary" value="{{ job.progress }}" max="100">{{ job.progress }}%</progress>
+        </div>
+    </div>
+</section>
+
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+ var doc = $(document);
+
+ 
+ doc.ready(function() {
+     setTimeout(function() {location.reload(true);}, 5000);
+
+     doc.click(function(e) {
+         var el = '<img src="{{ url_for('static', filename=parrot) }}" style="height: 70px; position: absolute; left: ' + e.pageX + 'px; top: ' + e.pageY + 'px;">';
+         $('body').append(el);
+     });
+ });
+</script>
+{% endblock %}

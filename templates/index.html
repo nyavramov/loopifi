@@ -1,0 +1,240 @@
+{% extends "skeleton.html" %}
+{% set active_page = 'index' -%}
+{% set featured = [
+['carrot.webm', 'carrot.mp4'],
+['rickroll.webm', 'rickroll.mp4'],
+['jumprope.webm', 'jumprope.mp4'], 
+['dancing_robot.webm', 'dancing_robot.mp4']] %}
+
+{% block styles %}
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/bulma-carousel.min.css') }}">
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/bulma-switch.min.css') }}">
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/bulma-accordion.min.css') }}">
+{% endblock %}
+
+{% block libs %}
+<script type="text/javascript" src="{{ url_for('static', filename='js/bulma-carousel.min.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='js/bulma-accordion.min.js') }}"></script>
+{% endblock %}
+
+{% block body %}
+
+<div class="container base-container"
+     style="display: flex; padding: 2rem 0;">
+    <div class="columns">
+        <div class="column homepage-column">
+            <div class="container has-text-centered" style="max-width: 320px;">
+                <h1 class="title">
+                    Discover Awesome Loops in Videos
+                </h1>
+
+                {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                {% for message in messages %}
+                <div class="notification is-danger">
+                    <strong>Error:</strong> {{ message }}
+                </div>
+                {% endfor %}
+                {% endif %}
+                {% endwith %}
+
+                <form action="{{ url_for('create') }}"
+                      method="post"
+                      enctype="multipart/form-data">
+                    <div class="field youtube-form">
+                        <label class="label">YouTube * URL</label>
+                        <div class="control">
+                            <input name="url"
+                                   class="input"
+                                   type="url"
+                                   placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                                   required>
+                        </div>
+                        <p class="help">
+                            * Includes all sites supported by <a href="https://rg3.github.io/youtube-dl/supportedsites.html">youtube-dl</a>.
+                        </p>
+                    </div>
+
+                    <div class="field upload-form" style="display: none;">
+                        <div class="file is-boxed" id="main-file">
+                            <label class="file-label">
+                                <input class="file-input" type="file" name="file" accept="video/mp4">
+                                <span class="file-cta">
+                                    <span class="file-icon">
+                                        <i class="fas fa-upload"></i>
+                                    </span>
+                                    <span class="file-label">
+                                        Choose a video file *
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                        <p style="text-align: center;" class="help">* Must be an <b>.mp4</b> video. Max <b>16 MB</b>.</p>
+                    </div>
+                    
+                    <div style="padding-top: 0.5rem;" class="field">
+                        <label>
+                            Choose times to search for loops
+                        </label>
+                        <div class="field-body">
+                            <div class="columns">
+                                <div class="field column">
+                                    <label>Start Time</label>
+                                    <p class="control is-expanded has-icons-left">
+                                        <input id="my-start-timestamp"
+                                               name="startTimestamp"
+                                               class="input"
+                                               type="text"
+                                               value="00:00"
+                                               placeholder="00:00"
+                                               pattern="\d?\d:\d\d"
+                                               required>
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-hourglass-start"></i>
+                                        </span>
+                                    </p>
+                                </div>
+                                <div class="field column">
+                                    <label>End Time</label>
+                                    <p class="control is-expanded has-icons-left">
+                                        <input id="my-end-timestamp"
+                                               name="endTimestamp"
+                                               class="input"
+                                               type="text"
+                                               value="00:10"
+                                               placeholder="00:00"
+                                               pattern="\d?\d:\d\d"
+                                               required>
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-hourglass-end"></i>
+                                        </span>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <p style="text-align: center;" class="help">Max <b>30 seconds</b> video segment length. Defaults to first <b>10 seconds</b> of video.</p>
+                    </div>
+                    <div class="field">
+                        <section class="accordions">
+                            <article class="accordion">
+                                <div class="accordion-header toggle has-background-light is-outlined has-text-grey-dark" style="border: 1px solid #dbdbdb; border-bottom: 0px;border-radius: 0px;">
+                                    <p>More Options</p>
+                                    <i class="fas fa-sliders-h is-pulled-right"></i>
+                                </div>
+                                <div class="accordion-body has-background-white-ter">
+                                    <div class="accordion-content">
+                                        <div class="field is-pulled-left">
+                                            <input id="enableSoundSwitch"
+                                                   type="checkbox"
+                                                   name="enableSound"
+                                                   class="switch">
+                                            <label for="enableSoundSwitch">Enable sound</label>
+                                        </div>
+                                        <div class="field is-pulled-left" style="padding-bottom: 1rem;">
+                                            <input id="stabilizeVideoSwitch"
+                                                   type="checkbox"
+                                                   name="stabilizeVideo"
+                                                   class="switch">
+                                            <label for="stabilizeVideoSwitch">Stabilize video</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </article>
+                        </section>
+                    </div>
+                    <div class="field">
+                        <div class="control" id="main-submit">
+                            <button class="button is-link">Submit</button>
+                        </div>
+                    </div>
+                    <div class="field youtube-form">
+                        <p class="has-text-weight-light help">
+                            Not on YouTube? <a href="#" id="switchToUploadForm">Upload your own video</a>!
+                        </p>
+                    </div>
+                    <div class="field upload-form" style="display: none;">
+                        <p class="has-text-weight-light help">
+                            Want to check a YouTube video instead? <a href="#" id="switchToYoutubeForm">Upload by URL</a>!
+                        </p>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="column homepage-column">
+            <div class="carousel carousel-animated carousel-animate-slide"
+                 data-size="1"
+                 data-autoplay="true"
+                 data-delay="3000">
+                <div class="carousel-container" style="width: 100%;">
+                    {% for webm, mp4 in featured %}
+                    <div class="carousel-item">
+                        <figure class="image">
+                            <video class=""
+                                   loop="true"
+                                   autoplay
+                                   muted
+                                   preload="auto"
+                                   width=""
+                                   height=""
+                                   poster=""
+                                   playsinline>
+                                <source src="{{ url_for('static', filename='img/webms/' + webm) }}"
+                                        type='video/webm'>
+                                <source src="{{ url_for('static', filename='img/webms/' + mp4 ) }}"
+                                        type='video/mp4'>
+                            </video>
+                        </figure>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="carousel-navigation is-centered">
+                    <div class="carousel-nav-left">
+                        <i class="fa fa-chevron-left" aria-hidden="true"></i>
+                    </div>
+                    <div class="carousel-nav-right">
+                        <i class="fa fa-chevron-right" aria-hidden="true"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+ $(document)
+     .ready(
+         function() {
+             $('#switchToUploadForm')
+                 .click(
+                     function() {
+                         $('.youtube-form').hide();
+                         $('.youtube-form input').removeAttr('required');
+
+                         $('.upload-form').show();
+                         $('.upload-form input').attr('required', 'required');
+                     }
+                 );
+
+             $('#switchToYoutubeForm')
+                 .click(
+                     function() {
+                         $('.upload-form').hide();
+                         $('.upload-form input').removeAttr('required');
+
+                         $('.youtube-form').show();
+                         $('.youtube-form input').attr('required', 'required');
+                     }
+                 );
+
+             // Initialize the Bulma Carousel extension
+             bulmaCarousel.attach();
+
+             // Initialize the Bulma Accordion extension
+             bulmaAccordion.attach();
+         }
+     );
+</script>
+{% endblock %}

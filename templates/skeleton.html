@@ -1,0 +1,92 @@
+{% set navigation_bar = [
+('browse', 'Recent Submissions'),
+('stats', 'Site Stats'),
+('about', 'About')
+] -%}
+
+{% set active_page = active_page|default('index') -%}
+
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name=”description” content="Find and make perfect loops from videos! Create and download smoothly looping gifs and webms from youtube and other video streaming sites, or upload your own!">
+        <meta charset="utf-8">
+
+        <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+
+        <title>{% block title %}Discover Loops{% endblock %}</title>
+
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/bulma.min.css' ) }}">
+        <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/master.css') }}">
+
+        {% block styles %}{% endblock %}
+
+        <script defer src="https://use.fontawesome.com/releases/v5.1.0/js/all.js"></script>
+
+        <!-- Global site tag (gtag.js) - Google Analytics -->
+        <script async src="https://www.googletagmanager.com/gtag/js?id=UA-128005698-1"></script>
+        <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+
+            gtag('config', 'UA-128005698-1');
+        </script>
+
+
+        {% block libs %}{% endblock %}
+    </head>
+    <body>
+        <nav class="navbar is-light">
+            <div class="container">
+                <div class="navbar-brand">
+                    <a class="navbar-item" href="{{ url_for('index') }}">
+                        <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" height="28">
+                    </a>
+                    <div class="navbar-burger burger" data-target="my-navbar">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+
+                <div id="my-navbar" class="navbar-menu">
+                    <div class="navbar-start">
+                        {% for id, caption in navigation_bar %}
+                        <a class="navbar-item {% if id == active_page %}is-active{% endif %}"
+                             href="{{ url_for(id) }}">{{ caption|e }}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </nav>
+        
+        {% block body %}{% endblock %}
+
+        <footer class="footer site-footer">
+            <div class="content has-text-centered">
+                <p>
+                    <strong>Discover Loops</strong> by <a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ">Nikolai</a> and <a href="https://github.com/tristanmkernan">Tristan</a>.
+                </p>
+            </div>
+        </footer>
+
+        <script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
+
+        {% block scripts %}{% endblock %}
+
+        <script>
+	 $(document).ready(function () {
+             $('.navbar-burger')
+	         .click(function () {
+                     $(this).toggleClass('is-active');
+                     $('.navbar-menu').toggleClass('is-active');
+	         });
+	 });
+	</script>
+
+    </body>
+</html>
+

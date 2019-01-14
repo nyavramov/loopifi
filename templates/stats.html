@@ -1,0 +1,149 @@
+{% extends "skeleton.html" %}
+{% set active_page = 'stats' -%}
+
+{% block libs %}
+<script src="{{ url_for('static', filename='js/Chart.bundle.min.js' ) }}"></script>
+{% endblock %}
+
+{% block body %}
+
+<section class="section">
+    <div class="container">
+        <h1 class="title">
+            Uploads Per Day (Last Week)
+        </h1>
+        <h2 class="subtitle">
+            A chart showing the number of uploads per day for the last week.
+        </h2>
+        <div class="chart-container">
+            <canvas id="uploadsPerDayChart"
+                    width="400"
+                    height="400"></canvas>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <h1 class="title">
+            Average Time to Process (Last Week)
+        </h1>
+        <h2 class="subtitle">
+            A chart plotting the average time from upload to process finish per day for the last week.
+        </h2>
+        <div class="chart-container">
+            <canvas id="averageTimeToProcessChart"
+                    width="400"
+                    height="400"></canvas>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <h1 class="title">
+            Total Uploads
+        </h1>
+        <h2 class="subtitle">
+            A chart plotting the total uploads.
+        </h2>
+        <div class="chart-container">
+            <canvas id="totalUploadsChart"
+                    width="400"
+                    height="400"></canvas>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+ var ctx = document.getElementById('uploadsPerDayChart').getContext('2d');
+ var myChart = new Chart(ctx, {
+     type: 'bar',
+     data: {
+         labels: ['6 Days Ago', '5 Days Ago', '4 Days Ago',  '3 Days Ago', '2 Days Ago', '1 Day Ago', 'Today'],
+         datasets: [{
+             label: '# of Uploads',
+             data: [{{ uploadsPerDay|join(',') }}],
+             backgroundColor: [
+                 'rgba(255, 99, 132, 0.2)',
+                 'rgba(54, 162, 235, 0.2)',
+                 'rgba(255, 206, 86, 0.2)',
+                 'rgba(75, 192, 192, 0.2)',
+                 'rgba(153, 102, 255, 0.2)',
+                 'rgba(255, 159, 64, 0.2)',
+                 'rgba(255, 255, 64, 0.2)'
+             ],
+             borderColor: [
+                 'rgba(255,99,132,1)',
+                 'rgba(54, 162, 235, 1)',
+                 'rgba(255, 206, 86, 1)',
+                 'rgba(75, 192, 192, 1)',
+                 'rgba(153, 102, 255, 1)',
+                 'rgba(255, 159, 64, 1)',
+                 'rgba(255, 255, 64, 1)'
+             ],
+             borderWidth: 1
+         }]
+     },
+     options: {
+         maintainAspectRatio: false,
+         scales: {
+             yAxes: [{
+                 ticks: {
+                     beginAtZero:true
+                 }
+             }]
+         }
+     }
+ });
+
+ ctx = document.getElementById('averageTimeToProcessChart').getContext('2d');
+ myChart = new Chart(ctx, {
+     type: 'line',
+     data: {
+         labels: ['6 Days Ago', '5 Days Ago', '4 Days Ago',  '3 Days Ago', '2 Days Ago', '1 Day Ago', 'Today'],
+         datasets: [{
+             fill: false,
+             label: 'Avg. Time To Process (Seconds)',
+             data: [{{ averageTimeToProcessPerDay|join(',') }}],
+         }]
+     },
+     options: {
+         maintainAspectRatio: false,
+         scales: {
+             yAxes: [{
+                 ticks: {
+                     beginAtZero:true
+                 }
+             }]
+         }
+     }
+ });
+
+ ctx = document.getElementById('totalUploadsChart').getContext('2d');
+ myChart = new Chart(ctx, {
+     type: 'line',
+     data: {
+         labels: ['6 Days Ago', '5 Days Ago', '4 Days Ago',  '3 Days Ago', '2 Days Ago', '1 Day Ago', 'Today'],
+         datasets: [{
+             fill: false,
+             label: 'Total Uploads',
+             data: [{{ totalUploads|join(',') }}],
+         }]
+     },
+     options: {
+         maintainAspectRatio: false,
+         scales: {
+             yAxes: [{
+                 ticks: {
+                     beginAtZero:true
+                 }
+             }]
+         }
+     }
+ });
+</script>
+{% endblock %}

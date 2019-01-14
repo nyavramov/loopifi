@@ -1,0 +1,69 @@
+{% extends "skeleton.html" %}
+{% set active_page = 'about' %}
+
+{% set deps = [
+('Flask', 'BSD', 'http://flask.pocoo.org/'),
+('Flask Migrate', 'MIT', 'https://flask-migrate.readthedocs.io/en/latest/'),
+('Flask RQ2', 'MIT', 'https://flask-rq2.readthedocs.io/en/latest/'),
+('Flask SQLAlchemy', 'BSD', 'http://flask-sqlalchemy.pocoo.org/2.3/'),
+('ImageHash', 'BSD', 'https://github.com/JohannesBuchner/imagehash'),
+('Pillow', 'PIL-SL', 'https://pillow.readthedocs.io/en/5.3.x/'),
+('youtube-dl', 'Unlicense', 'https://rg3.github.io/youtube-dl/'),
+('Cult of the Party Parrot', 'CC BY-SA 4.0', 'https://cultofthepartyparrot.com/'),
+('Bulma', 'MIT', 'https://bulma.io/'),
+('Bulma Extensions', 'MIT', 'https://wikiki.github.io/'),
+('FFmpeg', 'LGPL-2', 'https://www.ffmpeg.org/')
+] %}
+
+{% block body %}
+
+<section class="hero">
+    <div class="hero-body">
+	<div class="container">
+	    <h1 class="title">
+		Authors
+	    </h1>
+	    <h2 class="subtitle">
+		Nikolay Avramov and Tristan Kernan
+	    </h2>
+	</div>
+    </div>
+</section>
+
+<section class="hero">
+    <div class="hero-body">
+	<div class="container">
+	    <h1 class="title">
+		Attributions
+	    </h1>
+            <table class="table is-hoverable">
+                <thead>
+                    <tr>
+                        <th>Dependency</th>
+                        <th>License</th>
+                        <th>Link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for name, license, url in deps %}
+                    <tr>
+                        <td>{{ name }}</td>
+                        <td>{{ license }}</td>
+                        <td>
+                            <a href="{{ url }}"
+                               class="button"
+                               target="_blank">
+                                <span class="icon">
+                                    <i class="fas fa-external-link-alt"></i>
+                                </span>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+	</div>
+    </div>
+</section>
+
+{% endblock %}

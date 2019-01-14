@@ -1,0 +1,33 @@
+figure {
+    width: 100%;
+    text-align: center;
+}
+
+figure img {
+    vertical-align: middle;
+}
+
+.file#main-file {
+    justify-content: center;
+}
+
+.control#main-submit {
+    display: flex;
+    justify-content: center;
+}
+
+html, body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.base-container {
+    flex: 1;
+}
+
+.homepage-column {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}

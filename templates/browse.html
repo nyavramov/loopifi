@@ -1,0 +1,74 @@
+{% extends "skeleton.html" %}
+{% set active_page = 'browse' -%}
+
+{% block body %}
+
+<div class="container base-container" style="max-width: 600px; margin: 2rem auto;">
+    <nav class="pagination is-right"
+         role="navigation"
+         aria-label="pagination"
+         style="margin: 0.5rem auto;">
+        <a class="pagination-previous"
+           {% if pagination.has_prev %}
+           href="{{ url_for('browse', page=pagination.prev_num) }}"
+           {% else %}
+           disabled="true"
+           {% endif %}>
+            Previous
+        </a>
+        <a class="pagination-next"
+           {% if pagination.has_next %}
+           href="{{ url_for('browse', page=pagination.next_num) }}"
+           {% else %}
+           disabled="true"
+           {% endif %}>
+            Next page
+        </a>
+
+        <ul class="pagination-list">
+            {%- for page in pagination.iter_pages(left_edge=1, left_current=1, right_current=2, right_edge=1) %}
+            {% if page %}
+            {% if page != pagination.page %}
+            <li>
+                <a class="pagination-link" href="{{ url_for('browse', page=page) }}">{{ page }}</a>
+            </li>
+            {% else %}
+            <li>
+                <a disabled="true" class="pagination-link is-current" href="{{ url_for('browse', page=page) }}">{{ page }}</a>
+            </li>
+            {% endif %}
+            {% else %}
+            <li>
+                <span class=pagination-ellipsis>&hellip;</span>
+            </li>
+            {% endif %}
+            {%- endfor %}
+        </ul>
+    </nav>
+
+    <nav class="panel">
+        <p class="panel-heading">
+            Browse Recent Submissions
+        </p>
+        {% if not pagination.items %}
+        <a class="panel-block">
+            <span class="panel-icon">
+                <i class="fas fa-info" aria-hidden="true"></i>
+            </span>
+            No submissions available.
+        </a>
+        {% endif %}
+
+        {% for record in pagination.items %}
+        <a class="panel-block" href="{{ url_for('access', _id=record.id) }}">
+            <span class="panel-icon">
+                <i class="fas fa-video" aria-hidden="true"></i>
+            </span>
+            Video loopified at {{ record.finished_at.strftime('%Y-%m-%d %H:%M') }}
+        </a>
+        {% endfor %}
+    </nav>
+</div>
+
+{% endblock %}
+

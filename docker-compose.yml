@@ -1,0 +1,33 @@
+version: '2.2'
+services:
+  web:
+    environment:
+      LOOPER_SETTINGS: "/app/env/docker.env"
+    build: .
+    ports:
+     - "8084:80"
+    restart: always
+    volumes:
+     - /tmp/webmlooper_prod/:/app/static/res/
+  worker:
+    scale: 2
+    environment:
+      LOOPER_SETTINGS: "/app/env/docker.env"
+    build: .
+    command: flask rq worker
+    restart: always
+    volumes:
+     - /tmp/webmlooper_prod/:/app/static/res/
+  redis:
+    image: redis:alpine
+    restart: always
+  db:
+    image: mariadb
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: nevergonnaletyoudown
+      MYSQL_DATABASE: loops
+    volumes: 
+        - loops-database:/var/lib/mysql:rw
+volumes:
+  loops-database: {}
