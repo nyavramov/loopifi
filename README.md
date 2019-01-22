@@ -2,7 +2,7 @@
 ![](https://imgur.com/54DuAUR.gif) ![](https://imgur.com/XrNK4Zd.gif)
 
 ## What is this?
-This is the source code for loopifi.com created by me and [Tristan Kernan](https://github.com/tristanmkernan).
+This is the source code for [loopifi.com](https://loopifi.com) created by me and [Tristan Kernan](https://github.com/tristanmkernan).
 
 Loopifi.com is a website created to help people find and make smooth loops from videos. It allows users to create and download smoothly looping gifs and webms from youtube and other video streaming sites, or upload their own videos.
 
