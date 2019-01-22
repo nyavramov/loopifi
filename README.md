@@ -1,4 +1,4 @@
-# [Loopifi.com](loopifi.com) - Find smooth loops in videos
+# [Loopifi.com](https://loopifi.com) - Find smooth loops in videos
 ![](https://imgur.com/54DuAUR.gif) ![](https://imgur.com/XrNK4Zd.gif)
 
 ## What is this?
@@ -17,5 +17,5 @@ Finally, the top N candidate loops with the highest similarity scores are select
 Flask	(BSD), Flask Migrate	(MIT), Flask RQ2 (MIT), Flask SQLAlchemy (BSD), ImageHash (BSD), Pillow	PIL (SL), youtube-dl	(Unlicensed), Cult of the Party Parrot (CC BY-SA 4.0), Bulma (MIT), Bulma Extensions (MIT), FFmpeg (LGPL-2).
 
 ## How do I run this?
-Assuming you have docker and docker-compose already installed, clone the repo and simply run `docker-compose up --build` to build and run the docker image. Then go to `localhost:8084` to use loopifi. You can also check out the live version of the site at [loopifi.com](loopifi.com).
+Assuming you have docker and docker-compose already installed, clone the repo and simply run `docker-compose up --build` to build and run the docker image. Then go to `localhost:8084` to use loopifi. You can also check out the live version of the site at [loopifi.com](https://loopifi.com).
 
