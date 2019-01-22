@@ -14,7 +14,7 @@ An input video uploaded by the user or downloaded via youtube-dl is split into f
 Finally, the top N candidate loops with the highest similarity scores are selected and encoded to GIF, WEBM, and MP4 format. 
 
 ## What did you use to build this?
-Docker, Docker-compose, Flask	(BSD), Flask Migrate	(MIT), Flask RQ2 (MIT), Flask SQLAlchemy (BSD), ImageHash (BSD), Pillow	PIL (SL), youtube-dl	(Unlicensed), Cult of the Party Parrot (CC BY-SA 4.0), Bulma (MIT), Bulma Extensions (MIT), FFmpeg (LGPL-2).
+Docker (Apache License 2.0), Docker-compose (Apache License 2.0), Flask	(BSD), Flask Migrate	(MIT), Flask RQ2 (MIT), Flask SQLAlchemy (BSD), ImageHash (BSD), Pillow	PIL (SL), youtube-dl	(Unlicensed), Cult of the Party Parrot (CC BY-SA 4.0), Bulma (MIT), Bulma Extensions (MIT), FFmpeg (LGPL-2).
 
 ## How do I run this?
 Assuming you have docker and docker-compose already installed, clone the repo and simply run `docker-compose up --build` to build and run the docker image. Then go to `localhost:8084` to use loopifi. You can also check out the live version of the site at [loopifi.com](https://loopifi.com).
