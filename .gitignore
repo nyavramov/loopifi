@@ -1,2 +1,9 @@
 VirtualEnv/
 .idea/
+
+bin/
+lib/
+lib64
+etc/
+include/
+share/
