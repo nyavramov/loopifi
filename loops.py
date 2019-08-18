@@ -1,26 +1,37 @@
-from ntpath import basename
-from PIL import Image
-from collections import namedtuple
-
-import glob
-import imagehash
 import os
-import re
+import sys
 import shutil
 import subprocess
-import sys
+from collections import namedtuple
+
+import cv2
+import imagehash
+from PIL import Image
+from ntpath import basename
+from logging_setup.logging_setup import get_logger
+
+logger = get_logger(__name__)
+
 
 ##############################################################################################################
 # Constants
 ##############################################################################################################
 
-# max amount of time between start and end timestamps
-MAX_VIDEO_SEARCH_LENGTH = 30
+# Max amount of time between start and end timestamps
+MAX_VIDEO_SEARCH_LENGTH = 600
 
-# phash related hash constants
-HASH_SIZE = 128
-MAX_HASH_DIFFERENCE = 65536
+# Search related hash constants
+HASH_SIZE = 64
+MAX_HASH_DIFFERENCE = (HASH_SIZE ** 2) * 4
+MIN_MID_FRAME_SIMILARITY = 4
 SIMILARITY_THRESHOLD = MAX_HASH_DIFFERENCE * 0.75
+SEARCH_STEP_SIZE = 5       # Granularity/specificity of the loop search
+
+# Webm output related constants
+LOOP_WIDTH = 500           # The width in pixels of an encoded webm
+NUMBER_WEBMS_TO_MAKE = 5   # How many webms we would like to make in total
+MINIMUM_LOOP_FRAMES = 15   # The minimum number of frames in a webm
+MAXIMUM_LOOP_FRAMES = 300  # The maximum number of frames in a webm
 
 # Enable to prevent temporary files from being deleted
 # Use from env-var like `DEBUG_MODE=1 python loops.py ...` or `DEBUG_MODE=1 flask rq worker`
@@ -30,41 +41,44 @@ DEBUG_MODE = os.environ.get('DEBUG_MODE', False)
 # Class Definitions
 ##############################################################################################################
 
-LoopRecord = namedtuple("webm", ["webmName", "gifName", "score", "frameLength", "startFrameNumber", "endFrameNumber",
-                           "webmLocation", "gifLocation", "mp4Location"])
+LoopRecord = namedtuple("webm", ["webm_name", "gif_name", "score", "frame_length", "start_frame_number",
+                                 "end_frame_number", "webm_location", "gif_location", "mp4_location"])
 
 
 class FrameHashDatabase(object):
 
-    def __init__(self, existing_hashes):
+    def __init__(self, existing_hashes, path_of_source_video):
         self.db = existing_hashes
+        self.path_of_source_video = path_of_source_video
 
-    def get(self, filename):
-        if filename not in self.db:
-            self.db[filename] = imagehash.phash(Image.open(filename), hash_size=HASH_SIZE)
+    def get(self, frame_number):
 
-        return self.db[filename]
+        while frame_number not in self.db:
+            # check if the next frame over exists
+            frame_number += 1
+
+        return self.db[frame_number]
 
 
 class CandidateLoop(object):
-    def __init__(self, score, startFrameNumber, endFrameNumber, frameRate):
+    def __init__(self, score, start_frame_number, end_frame_number, frame_rate):
 
-        self.score            = score
-        self.startFrameNumber = startFrameNumber
-        self.endFrameNumber   = endFrameNumber
-        self.frameRate        = frameRate
+        self.score = score
+        self.start_frame_number = start_frame_number
+        self.end_frame_number = end_frame_number
+        self.frame_rate = frame_rate
 
-        self.startTime = self.startFrameNumber / frameRate
-        self.duration  = (self.endFrameNumber - self.startFrameNumber) / frameRate
+        self.start_time = self.start_frame_number / frame_rate
+        self.duration = (self.end_frame_number - self.start_frame_number) / frame_rate
         
-        self.gifPaletteCommand = None
-        self.gifEncodeCommand  = None
-        self.webmEncodeCommand = None 
-        self.mp4EncodeCommand  = None
+        self.gif_palette_command = None
+        self.gif_encode_command = None
+        self.webm_encode_command = None
+        self.mp4_encode_command = None
 
-        self.gifName  = None
-        self.webmName = None
-        self.mp4Name  = None
+        self.gif_name = None
+        self.webm_name = None
+        self.mp4_name = None
 
 
 class InvalidIntervalException(Exception):
@@ -76,47 +90,42 @@ class InvalidIntervalException(Exception):
 
 
 # Clean up the various files & folders we generated at the start of the loop creation process
-# TODO should put all temporary files into a single directory that can be either deleted
-#  or not based on a `DEBUG_MODE` flag
-def cleanUpFolders(tempFramesFolder, frameDirectoryPath, pathOfSourceVideo, stableVideoPath):
+# TODO should put all temporary files into a single directory that can be either deleted or not based on a `DEBUG_MODE`
+#  flag
+def clean_up_folders(temp_frames_folder, frame_directory_path, path_of_source_video):
 
     if DEBUG_MODE:
         return
 
-    foldersToRemove = [tempFramesFolder, frameDirectoryPath] 
+    folders_to_remove = [temp_frames_folder, frame_directory_path]
 
-    vectorFile = os.path.join(os.path.dirname(pathOfSourceVideo), "transform_vectors.trf")
+    vector_file = os.path.join(os.path.dirname(path_of_source_video), "transform_vectors.trf")
     
-    filesToRemove = [vectorFile, pathOfSourceVideo]
+    files_to_remove = [vector_file, path_of_source_video]
 
-    # If we choose not to stabilize video, stable video path *becomes* the path of source video
-    # So for testing purposes, let's not delete the stable video since we'd be deleting the source video
-    if stableVideoPath != pathOfSourceVideo:
-        filesToRemove.append(stableVideoPath)
-
-    for folder in foldersToRemove:
+    for folder in folders_to_remove:
         try:
             shutil.rmtree(folder)
-        except:
+        except FileNotFoundError:
             pass
 
-    for file in filesToRemove:
+    for file in files_to_remove:
         try:
             os.remove(file)
-        except:
+        except FileNotFoundError:
             pass
 
 
 #######################################################################################################################
 
 # Get how long the video is
-def getDuration(video_path):
+def get_duration(video_path):
     
     command = ["ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                video_path]
+               "-v", "error",
+               "-show_entries", "format=duration",
+               "-of", "default=noprint_wrappers=1:nokey=1",
+               video_path]
 
     duration_string = subprocess.check_output(command, encoding='UTF-8')
 
@@ -126,15 +135,16 @@ def getDuration(video_path):
 
 #######################################################################################################################
 
+
 # Due to complications with start/end time, we need this fps function for number of frames calculation
-def getFrameRate(video_path):
+def get_frame_rate(video_path):
 
     command = ["ffprobe",
-                "-v", "0",
-                "-of", "csv=p=0",
-                "-select_streams", "V:0",
-                "-show_entries", "stream=r_frame_rate",
-                video_path]
+               "-v", "0",
+               "-of", "csv=p=0",
+               "-select_streams", "V:0",
+               "-show_entries", "stream=r_frame_rate",
+               video_path]
 
     frame_rate_string = subprocess.check_output(command, encoding='UTF-8')
 
@@ -143,474 +153,448 @@ def getFrameRate(video_path):
     frame_rate = int(num) / int(div)
 
     return frame_rate
-
-#######################################################################################################################
-
-# Split a video into its constituent frames
-def splitVideoIntoFrames(frameDirectoryPath, stableVideoPath, callback):
-
-    ffmpegSplitVideoSyntax = "{}/%d.png".format(frameDirectoryPath)
-
-    # ffmpeg split command
-    command = ['ffmpeg',
-               "-i", stableVideoPath,
-            ffmpegSplitVideoSyntax]
-
-    callback("Splitting video into frames...", 20)
-
-    subprocess.run(command)
-
-    callback("Finished splitting video...", 40)
     
 #######################################################################################################################
 
+
 # Creates directories called Loops & ALL_FRAMES_{videoName} & temp if they don't already exist 
-def createDirectories(*paths):
+def create_directories(*paths):
     for path in paths:
         if not os.path.exists(path):
             os.makedirs(path)
 
 #######################################################################################################################
 
-# Calculate stabilization vectors --> Stabilize video
-def stabilizeVideo(pathOfSourceVideo, loopWidth, stableVideoPath, startTime, endTime, callback):
-    
-    folderOfSourceVideo = os.path.dirname(pathOfSourceVideo)
-    duration            = endTime - startTime
 
-    # Prior to stabilizing the video, we'll need to calculate the stabilization vectors we need
-    calculateVectorCommand = ['ffmpeg',
-                              "-y",
-                              "-threads", "8",
-                              "-i", "{}".format(pathOfSourceVideo),
-                              "-vf",  "vidstabdetect=stepsize=6:shakiness=4:accuracy=5:"
-                              "result={}/transform_vectors.trf".format(os.path.dirname(pathOfSourceVideo)),
-                              "-f", "null",
-                              "-"]
+# Calculate stabilization vectors --> Stabilize video
+def resize_video(path_of_source_video, resized_video_path, callback):
 
     # Now we can use libvidstab to stabilize video using the .trf vector file we just created
-    stabilizeCommand = ['ffmpeg',
-                        "-threads", "8",
-                        "-y",   
-                        "-i", pathOfSourceVideo,
-                        "-ss", str(startTime),
-                        "-t", str(duration),
-                        "-vf", "vidstabtransform=input={}/transform_vectors.trf:"
-                        "zoom=1:smoothing=30,unsharp=5:5:0.8:3:3:0.4".format(folderOfSourceVideo,
-                        loopWidth),
-                        "-vcodec", "libx264",
-                        "-acodec", "copy",
-                        "-preset", "fast",
-                        "-tune", "film",
-                        "-crf", "17",
-                        "-acodec", "copy",
-                        stableVideoPath]
+    resize_command = ['ffmpeg',
+                      "-y",
+                      "-i", path_of_source_video,
+                      "-vf", f"scale={LOOP_WIDTH}:-2",
+                      "-crf", "20",
+                      resized_video_path]
+
+    stabilize_progress = 0
+
+    callback("Resizing video...", stabilize_progress)
+
+    # run the command
+    subprocess.run(resize_command)
+    stabilize_progress += 10
+    callback("Resizing video...", stabilize_progress)
+
+    return resized_video_path
+
+
+# Calculate stabilization vectors --> Stabilize video
+def stabilize_video(path_of_source_video, stable_video_path, start_time, end_time, callback):
     
-    stabilizeProgress = 0
+    folder_of_source_video = os.path.dirname(path_of_source_video)
+    duration = end_time - start_time
 
-    callback("Stabilizing video...", stabilizeProgress)
+    # Prior to stabilizing the video, we'll need to calculate the stabilization vectors we need
+    calculate_vector_command = ['ffmpeg',
+                                "-y",
+                                "-threads", "8",
+                                "-i", "{}".format(path_of_source_video),
+                                "-vf",  "vidstabdetect=stepsize=6:shakiness=4:accuracy=5:"
+                                "result={}/transform_vectors.trf".format(os.path.dirname(path_of_source_video)),
+                                "-f", "null",
+                                "-"]
 
-    for command in (calculateVectorCommand, stabilizeCommand):
+    # Now we can use libvidstab to stabilize video using the .trf vector file we just created
+    stabilize_command = ['ffmpeg',
+                         "-threads", "8",
+                         "-y",
+                         "-i", path_of_source_video,
+                         "-ss", str(start_time),
+                         "-t", str(duration),
+                         "-vf", "vidstabtransform=input={}/transform_vectors.trf:"
+                         "zoom=1:smoothing=30,unsharp=5:5:0.8:3:3:0.4".format(folder_of_source_video,
+                                                                              LOOP_WIDTH),
+                         "-vcodec", "libx264",
+                         "-acodec", "copy",
+                         "-preset", "fast",
+                         "-tune", "film",
+                         "-crf", "17",
+                         "-acodec", "copy",
+                         stable_video_path]
+    
+    stabilize_progress = 0
+
+    callback("Stabilizing video...", stabilize_progress)
+
+    for command in (calculate_vector_command, stabilize_command):
         
-        callback("Stabilizing video...", stabilizeProgress)
+        callback("Stabilizing video...", stabilize_progress)
 
         # run the command
         subprocess.run(command)
 
-        stabilizeProgress += 10
+        stabilize_progress += 10
 
 #######################################################################################################################
+
 
 # We'll use this to tell FFMPEG what kind of GIF/WEBM we want, i.e., give it correctly formatted parameters
-def prepareWebmInfo(candidate, webmDestinationFolder, stableVideoPath, soundEnabled, counter):
+def prepare_webm_info(candidate, webm_destination_folder, stable_video_path, sound_enabled, counter):
     
-    webmName = "{}.webm".format(counter)
-    webmDestination = os.path.join(webmDestinationFolder, webmName)
+    webm_name = "{}.webm".format(counter)
+    webm_destination = os.path.join(webm_destination_folder, webm_name)
+    webm_encode_command = ["ffmpeg",
+                           "-y",
+                           "-ss", str(candidate.start_time),
+                           "-t", str(candidate.duration),
+                           "-i", stable_video_path]
 
-    webmEncodeCommand = ["ffmpeg",
-                         "-y",
-                         "-ss", str(candidate.startTime),
-                         "-t", str(candidate.duration),
-                         "-i", stableVideoPath]
-
-    if not soundEnabled:
-        webmEncodeCommand.append("-an")
+    if not sound_enabled:
+        webm_encode_command.append("-an")
 
     # This part of command will then process all frames in temp directory to output to GIF/WEBM
-    webmEncodeCommand.extend(["-minrate", "1700k",
-                              "-b:v", "1800K",
-                              "-maxrate", "2000K",
-                              "-c:v", "libvpx",
-                              "-vf", "scale=500:-2",
-                              webmDestination])
+    webm_encode_command.extend(["-minrate", "1700k",
+                                "-b:v", "1800K",
+                                "-maxrate", "2000K",
+                                "-c:v", "libvpx",
+                                "-vf", "scale=500:-2",
+                                webm_destination])
 
-    candidate.webmEncodeCommand = webmEncodeCommand
-    candidate.webmName          = webmName
+    candidate.webm_encode_command = webm_encode_command
+    candidate.webm_name = webm_name
 
     return candidate
     
 #######################################################################################################################
 
-def prepareGifInfo(candidate, webmDestinationFolder, stableVideoPath, frameDirectoryPath, counter):
 
-    gifName = "{}.gif".format(counter)
-    gifDestination = os.path.join(webmDestinationFolder, gifName)
-    paletteDestination = os.path.join(frameDirectoryPath, "palette.png")
+def prepare_gif_info(candidate, webm_destination_folder, stable_video_path, frame_directory_path, counter):
 
-    gifPaletteCommand = ["ffmpeg", 
-                         "-y", 
-                         "-ss", str(candidate.startTime),
-                         "-t", str(candidate.duration),
-                         "-i", stableVideoPath,
-                         "-vf", "scale=500:-2:flags=lanczos,palettegen",
-                         paletteDestination]
+    gif_name = "{}.gif".format(counter)
+    gif_destination = os.path.join(webm_destination_folder, gif_name)
+    palette_destination = os.path.join(frame_directory_path, "palette.png")
 
-    gifEncodeCommand = ["ffmpeg", 
-                        "-y", 
-                        "-ss", str(candidate.startTime),
-                        "-t", str(candidate.duration),
-                        "-i", stableVideoPath,
-                        "-i", paletteDestination,
-                        "-filter_complex", "fps=25,scale=500:-2:flags=lanczos[x];[x][1:v]paletteuse",
-                        gifDestination]
+    gif_palette_command = ["ffmpeg",
+                           "-y",
+                           "-ss", str(candidate.start_time),
+                           "-t", str(candidate.duration),
+                           "-i", stable_video_path,
+                           "-vf", "scale=500:-2:flags=lanczos,palettegen",
+                           palette_destination]
+
+    gif_encode_command = ["ffmpeg",
+                          "-y",
+                          "-ss", str(candidate.start_time),
+                          "-t", str(candidate.duration),
+                          "-i", stable_video_path,
+                          "-i", palette_destination,
+                          "-filter_complex", "fps=25,scale=500:-2:flags=lanczos[x];[x][1:v]paletteuse",
+                          gif_destination]
     
-    candidate.gifPaletteCommand = gifPaletteCommand
-    candidate.gifEncodeCommand  = gifEncodeCommand
-    candidate.gifName           = gifName
+    candidate.gif_palette_command = gif_palette_command
+    candidate.gif_encode_command = gif_encode_command
+    candidate.gif_name = gif_name
 
     return candidate
 
 #######################################################################################################################
 
-def prepareMp4Info(candidate, webmDestinationFolder, stableVideoPath, soundEnabled, counter):
 
-    mp4Name = "{}.mp4".format(counter)
-    mp4Destination = os.path.join(webmDestinationFolder, mp4Name)
+def prepare_mp4_info(candidate, webm_destination_folder, stable_video_path, sound_enabled, counter):
 
-    mp4EncodeCommand = ["ffmpeg",
-                        "-y",
-                        "-ss", str(candidate.startTime),
-                        "-t", str(candidate.duration),
-                        "-i", stableVideoPath,
-                        "-an",
-                        "-b:v", "1800K",
-                        "-c:v", "libx264",
-                        "-vf", "scale=500:-2",
-                        mp4Destination]
+    mp4_name = "{}.mp4".format(counter)
+    mp4_destination = os.path.join(webm_destination_folder, mp4_name)
 
-    if soundEnabled:
-        mp4EncodeCommand.remove("-an")
+    mp4_encode_command = ["ffmpeg",
+                          "-y",
+                          "-ss", str(candidate.start_time),
+                          "-t", str(candidate.duration),
+                          "-i", stable_video_path,
+                          "-an",
+                          "-b:v", "1800K",
+                          "-c:v", "libx264",
+                          "-vf", "scale=500:-2",
+                          mp4_destination]
 
-    candidate.mp4EncodeCommand = mp4EncodeCommand
-    candidate.mp4Name          = mp4Name
+    if sound_enabled:
+        mp4_encode_command.remove("-an")
+
+    candidate.mp4_encode_command = mp4_encode_command
+    candidate.mp4_name = mp4_name
 
     return candidate
 
 #######################################################################################################################
+
 
 # We'll clean/populate the temp directory and then create the loops from list of sorted candidates
-def createCandidateLoops(bestWebmCandidates, numberWebmsToMake, tempFramesFolder, frameDirectoryPath, callback):
+def create_candidate_loops(best_webm_candidates, callback):
 
-    percentPerWebm = 20 / numberWebmsToMake
-    encodeProgress = 80
+    percent_per_webm = 20 / NUMBER_WEBMS_TO_MAKE
+    encode_progress = 80
 
-    callback("Encoding webms...", encodeProgress)
+    callback("Encoding webms...", encode_progress)
     
-    for i in range(0, min(len(bestWebmCandidates), numberWebmsToMake)):
+    for i in range(0, min(len(best_webm_candidates), NUMBER_WEBMS_TO_MAKE)):
 
-        gifPaletteCommand = bestWebmCandidates[i].gifPaletteCommand
-        gifEncodeCommand  = bestWebmCandidates[i].gifEncodeCommand
-        webmEncodeCommand = bestWebmCandidates[i].webmEncodeCommand
-        mp4EncodeCommand  = bestWebmCandidates[i].mp4EncodeCommand
+        gif_palette_command = best_webm_candidates[i].gif_palette_command
+        gif_encode_command = best_webm_candidates[i].gif_encode_command
+        webm_encode_command = best_webm_candidates[i].webm_encode_command
+        mp4_encode_command = best_webm_candidates[i].mp4_encode_command
 
-        for command in (gifPaletteCommand, gifEncodeCommand, webmEncodeCommand, mp4EncodeCommand):
+        for command in (gif_palette_command, gif_encode_command, webm_encode_command, mp4_encode_command):
             subprocess.run(command)
 
-        encodeProgress = encodeProgress + percentPerWebm
+        encode_progress = encode_progress + percent_per_webm
 
-        callback("Encoding webms...", encodeProgress)
+        callback("Encoding webms...", encode_progress)
 
 #######################################################################################################################
 
-# TODO remove magic numbers in favor of constants at top of module
-def compareCandidates(startFrame, candidateFrame, hashDb, bestScoreThisIteration, similarityThreshold):
 
-    startHash     = hashDb.get(startFrame)
-    candidateHash = hashDb.get(candidateFrame)
+def compare_candidates(start_frame, candidate_frame, hash_db, best_score_this_iteration):
 
-    currentCandidateSimilarity = startHash - candidateHash
-    currentCandidateSimilarity = float(currentCandidateSimilarity)
+    start_hash = hash_db.get(start_frame)
+    candidate_hash = hash_db.get(candidate_frame)
 
-    startFrameName = basename(startFrame)
-    endFrameName   = basename(candidateFrame)
-    
+    current_candidate_similarity = start_hash - candidate_hash
+    current_candidate_similarity = float(current_candidate_similarity)
+
     # Keep track of which of the candidates get the best score when compared to start frame
-    if currentCandidateSimilarity < similarityThreshold and \
-       currentCandidateSimilarity < bestScoreThisIteration:
-
-        # Get the number of the start frame 
-        startFrameNumber = startFrameName.replace(".png", "")
-        startFrameNumber = int(startFrameNumber)
-
-        # Get the number of the end frame
-        endFrameNumber = endFrameName.replace(".png", "")
-        endFrameNumber = int(endFrameNumber)
+    if current_candidate_similarity < SIMILARITY_THRESHOLD and \
+       current_candidate_similarity < best_score_this_iteration:
         
-        middleFrame     = str(( endFrameNumber + startFrameNumber ) // 2) + ".png"
-        middleFramePath = os.path.join(os.path.dirname(startFrame), middleFrame)
-        middleFrameHash = hashDb.get(middleFramePath)
+        middle_frame = (start_frame + candidate_frame) // 2
+        middle_frame_hash = hash_db.get(middle_frame)
 
-        startMiddlePercentDiff = ( (startHash - middleFrameHash) / MAX_HASH_DIFFERENCE) * 100
-        if startMiddlePercentDiff < 4:
+        start_middle_percent_diff = ((start_hash - middle_frame_hash) / MAX_HASH_DIFFERENCE) * 100
+        if start_middle_percent_diff < MIN_MID_FRAME_SIMILARITY:
             return None
         
-        bestScoreThisIteration = currentCandidateSimilarity
+        best_score_this_iteration = current_candidate_similarity
 
-        return bestScoreThisIteration, startFrameNumber, endFrameNumber
+        return best_score_this_iteration, start_frame, candidate_frame
 
     return None
 
 #######################################################################################################################
 
-def addInfoToCandidates(bestWebmCandidates, webmDestinationFolder, stableVideoPath, frameDirectoryPath, soundEnabled):
 
-    for counter, candidate in enumerate(bestWebmCandidates, 1):
+def add_info_to_candidates(best_webm_candidates, webm_destination_folder, stable_video_path, frame_directory_path,
+                           sound_enabled):
 
-        prepareWebmInfo(candidate, webmDestinationFolder, stableVideoPath, soundEnabled, counter)
-        prepareGifInfo(candidate, webmDestinationFolder, stableVideoPath, frameDirectoryPath, counter)
-        prepareMp4Info(candidate, webmDestinationFolder, stableVideoPath, soundEnabled, counter)
+    for counter, candidate in enumerate(best_webm_candidates, 1):
 
-    return bestWebmCandidates
+        prepare_webm_info(candidate, webm_destination_folder, stable_video_path, sound_enabled, counter)
+        prepare_gif_info(candidate, webm_destination_folder, stable_video_path, frame_directory_path, counter)
+        prepare_mp4_info(candidate, webm_destination_folder, stable_video_path, sound_enabled, counter)
+
+    return best_webm_candidates
 
 #######################################################################################################################
 
+
 # Main program loop. As the name suggests, we use this to go through each frame and evaluate 
 # start frames vs candidates
-def searchForLoops(hashedFramesList, hashDb, searchOptions, callback):
+def search_for_loops(hashed_frames_list, hash_db, frame_rate, callback):
 
-    minimumLoopFrames, maximumLoopFrames, searchStepSize, similarityThreshold, frameRate = searchOptions
-
-    iteration              = 0  # What iteration of the search process we're on
-    bestWebmCandidates     = [] # Store commands & information corresponding to top loop candidates
+    iteration = 0  # What iteration of the search process we're on
+    best_webm_candidates = []  # Store commands & information corresponding to top loop candidates
     
     callback("Searching for loops...", 60)
 
     # Loop through every hash, comparing start hashes to candidates hashes
-    for startFrame in hashedFramesList:
-        bestCandidate    = None
-        iteration        = iteration + 1
-        candidateCounter = 0 # Limits min & max number of candidates to compare to 1st frame in window
+    for start_frame in hashed_frames_list:
+        best_candidate = None
+        iteration = iteration + 1
+        candidate_counter = 0  # Limits min & max number of candidates to compare to 1st frame in window
         
         # Move candidate search window & initialize highest similarity score to 0
         # Highest similarity refers to best candidate frame in current window
-        candidateFrames        = hashedFramesList[iteration:]
-        bestScoreThisIteration = MAX_HASH_DIFFERENCE
+        candidate_frames = hashed_frames_list[iteration:]
+        best_score_this_iteration = MAX_HASH_DIFFERENCE
         
         # Loop though every candidate frame and compare to start frame
-        for candidateFrame in candidateFrames:
-            candidateCounter = candidateCounter + searchStepSize 
+        for candidate_frame in candidate_frames:
+            candidate_counter = candidate_counter + SEARCH_STEP_SIZE
             
-            if candidateCounter < minimumLoopFrames:
+            if candidate_counter < MINIMUM_LOOP_FRAMES:
                 continue 
-            elif candidateCounter > maximumLoopFrames:
+            elif candidate_counter > MAXIMUM_LOOP_FRAMES:
                 break
             else:
-                aCandidate = compareCandidates(startFrame, candidateFrame, hashDb,
-                                               bestScoreThisIteration, similarityThreshold)
-                if aCandidate is not None:
-                    bestCandidate = aCandidate
-                    bestScoreThisIteration, _, _ = aCandidate
+                candidate = compare_candidates(start_frame, candidate_frame, hash_db, best_score_this_iteration)
+                if candidate is not None:
+                    best_candidate = candidate
+                    best_score_this_iteration, _, _ = candidate
  
         # If we've found a loop after comparing all the candidates, we can create it
-        if bestCandidate is not None:
-            bestScoreThisIteration, startFrameNumber, endFrameNumber = bestCandidate      
-            newCandidate = CandidateLoop(bestScoreThisIteration, startFrameNumber, endFrameNumber, frameRate)
+        if best_candidate is not None:
+            best_score_this_iteration, start_frame_number, end_frame_number = best_candidate
+            new_candidate = CandidateLoop(best_score_this_iteration, start_frame_number, end_frame_number, frame_rate)
             # Append the candidate loop along with its score, start, end, & framerate
-            bestWebmCandidates.append(newCandidate)
+            best_webm_candidates.append(new_candidate)
 
     callback("Searching for loops...", 80)
         
-    # Since bestWebmCandidates is a list of lists... aka... [ [0.89, commandString], [0.91, commandString] ]
+    # Since best_webm_candidates is a list of lists... aka... [ [0.89, commandString], [0.91, commandString] ]
     # Sort the outer list based on first item (score) of each inner list, highest to lowest score
-    bestWebmCandidates.sort(key = lambda x: x.score) 
-    return bestWebmCandidates
+    best_webm_candidates.sort(key=lambda x: x.score)
+
+    return best_webm_candidates
 
 #######################################################################################################################
 
-def hashFrames(searchStepSize, frames, callback):
 
-    hashDictionary   = {}
-    hashedFramesList = []
-    hashIteration    = 0
+def hash_frames(stable_video_path, callback):
+    """Hashes video frames using perceptual hashing
 
+    :param stable_video_path: where the stabilized video is located
+    :param callback: a callback function
+
+    :return: hash_dictionary, hashed_frames_list
+    """
     callback("Preparing to search...", 40)
 
-    for frame in frames:
-        hashIteration = hashIteration + 1
+    hashed_frames_list = []
+    hash_dictionary = {}
 
-        # Don't hash all frames, only the ones we want to look at
-        if hashIteration % searchStepSize != 0:
-            continue
+    current_frame = 0
 
-        # Append each hash to a hashes list, and add hash as kay to corresponding frame name
-        aHash = imagehash.phash(Image.open(frame), hash_size=HASH_SIZE)
+    video_capture = cv2.VideoCapture(stable_video_path)
+    number_of_frames = video_capture.get(cv2.CAP_PROP_FRAME_COUNT)
 
-        hashDictionary[frame] = aHash
-        hashedFramesList.append(frame)
-    
+    while video_capture.isOpened:
+
+        # Extract the frame
+        ret, frame = video_capture.read()
+
+        if not ret:
+            video_capture.release()
+            break
+
+        if current_frame % 150 == 0:
+            logger.info(f"Hash Progress: {(current_frame * 100) / number_of_frames}%")
+
+        if current_frame % SEARCH_STEP_SIZE == 0:
+            cv2_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pillow_image = Image.fromarray(cv2_image)
+            perceptual_hash = imagehash.phash(pillow_image, hash_size=HASH_SIZE)
+            hashed_frames_list.append(current_frame)
+            hash_dictionary[current_frame] = perceptual_hash
+
+        current_frame += 1
+
     callback("Preparing to search...", 60)
 
-    return hashDictionary, hashedFramesList
+    return hash_dictionary, hashed_frames_list
 
 #######################################################################################################################
 
-# Let's compose a list of all the frames in the video
-def getFrameList(path):
-    # find all png files in the frame directory path
-    search = os.path.join(path, '*.png')
 
-    # sort the results based on a special numerical sort
-    frames = sorted(glob.glob(search), key=numericalSort)
+def get_video_info_tuple(best_webm_candidates, webm_destination_folder):
 
-    return frames
+    tuples_list = []  # We'll store our namedtuples here
 
-#######################################################################################################################
+    for i in range(min(NUMBER_WEBMS_TO_MAKE, len(best_webm_candidates))):
 
-def getVideoInfoTuple(bestWebmCandidates, numberWebmsToMake, webmDestinationFolder):
-    
-    listOfTuples = [] # We'll store our namedtuples here
+        score = best_webm_candidates[i].score
+        start_frame_number = best_webm_candidates[i].start_frame_number
+        end_frame_number = best_webm_candidates[i].end_frame_number
+        webm_name = best_webm_candidates[i].webm_name
+        gif_name = best_webm_candidates[i].gif_name
+        mp4_name = best_webm_candidates[i].mp4_name
 
-    for i in range(min(numberWebmsToMake, len(bestWebmCandidates))):
+        relative_path_webm = os.path.join(webm_destination_folder, webm_name)
+        webm_location = os.path.abspath(relative_path_webm)
 
-        score            = bestWebmCandidates[i].score
-        startFrameNumber = bestWebmCandidates[i].startFrameNumber
-        endFrameNumber   = bestWebmCandidates[i].endFrameNumber
-        webmName         = bestWebmCandidates[i].webmName
-        gifName          = bestWebmCandidates[i].gifName
-        mp4Name          = bestWebmCandidates[i].mp4Name
+        relative_path_gif = os.path.join(webm_destination_folder, gif_name)
+        gif_location = os.path.abspath(relative_path_gif)
 
-        relativePathWebm = os.path.join(webmDestinationFolder, webmName)
-        webmLocation     = os.path.abspath(relativePathWebm)
+        relative_path_mp4 = os.path.join(webm_destination_folder, mp4_name)
+        mp4_location = os.path.abspath(relative_path_mp4)
 
-        relativePathGif = os.path.join(webmDestinationFolder, gifName)
-        gifLocation     = os.path.abspath(relativePathGif)
+        frame_length = end_frame_number - start_frame_number
 
-        relativePathMp4 = os.path.join(webmDestinationFolder, mp4Name)
-        mp4Location     = os.path.abspath(relativePathMp4)
+        normalized_score = round(-1 * (score / MAX_HASH_DIFFERENCE - 1), 3)
 
-        frameLength = endFrameNumber - startFrameNumber
+        webm_tuple = LoopRecord(webm_name, gif_name, normalized_score, frame_length, start_frame_number,
+                                end_frame_number, webm_location, gif_location, mp4_location)
 
-        normalizedScore = round(-1 * (score / MAX_HASH_DIFFERENCE - 1), 3)
-        
-        webmTuple = LoopRecord(webmName, gifName, normalizedScore, frameLength, startFrameNumber,
-                               endFrameNumber, webmLocation, gifLocation, mp4Location)
-        
-        listOfTuples.append(webmTuple)
-    
-    return listOfTuples
+        tuples_list.append(webm_tuple)
+
+    return tuples_list
 
 #######################################################################################################################
 
-# So that we can override whatever black magic on the OS sorts the frames incorrectly
-# This sorts the frames in our folder in correct numerical order: 1.png, 2.png, 3.png.
-def numericalSort(value):
-
-    numbers     = re.compile(r'(\d+)')
-    parts       = numbers.split(value)
-    parts[1::2] = map(int, parts[1::2])
-    
-    return parts
-
-#######################################################################################################################
 
 # Check if the params we've been given for start & end are valid
-def checkValidInterval(startTime, endTime, duration):
-    if startTime < 0 or endTime < 0:
+def check_valid_interval(start_time, end_time, duration):
+    if start_time < 0 or end_time < 0:
         return False
-    elif endTime - startTime < 0:
+    elif end_time - start_time < 0:
         return False
-    elif endTime - startTime > MAX_VIDEO_SEARCH_LENGTH:
+    elif end_time - start_time > MAX_VIDEO_SEARCH_LENGTH:
         return False
-    elif startTime > duration:
+    elif start_time > duration:
         return False
 
     return True
-    
+
 #######################################################################################################################
 
-def makeLoops(pathOfSourceVideo, startTime = 0, endTime = 20, callback = None, soundEnabled = True, stabilizeEnabled = True):
+
+def make_loops(path_of_source_video, start_time=0, end_time=20, callback=None, sound_enabled=True):
     # avoid repetitive callback checks and simply use this function
     def safe_callback(status, progress):
         if callback:
             callback(status, progress)
 
-    sourceVideoFolder = os.path.dirname(pathOfSourceVideo)
-
-    # Get path of stabilized video
-    if stabilizeEnabled:
-        stableVideoFileName = "STBL_" + basename(pathOfSourceVideo)
-        stableVideoPath     = os.path.join(sourceVideoFolder, stableVideoFileName)
-    else:
-        stableVideoPath = pathOfSourceVideo
+    source_video_folder = os.path.dirname(path_of_source_video)
 
     # Loops destination folder
-    webmDestinationFolder = os.path.join(sourceVideoFolder, "Loops")
+    webm_destination_folder = os.path.join(source_video_folder, "Loops")
 
     # Remove file ext --> generate folder name --> generate complete path
-    videoFileName      = basename(pathOfSourceVideo)
-    videoFileNameNoExt = os.path.splitext(videoFileName)[0]
-    frameDirectoryName = "ALL_FRAMES_" + videoFileNameNoExt
-    frameDirectoryPath = os.path.join(sourceVideoFolder, frameDirectoryName)
+    video_file_name = basename(path_of_source_video)
+    video_file_name_no_ext = os.path.splitext(video_file_name)[0]
+    frame_directory_name = "ALL_FRAMES_" + video_file_name_no_ext
+    frame_directory_path = os.path.join(source_video_folder, frame_directory_name)
 
     # We'll use this folder to hold frames needed by ffmpeg for loop creation
-    tempFramesFolder = os.path.join(frameDirectoryPath, "temp")
+    temp_frames_folder = os.path.join(frame_directory_path, "temp")
 
-    startTime         = float(startTime)       
-    endTime           = float(endTime)         
-    loopWidth         = 500              # The width in pixels of an encoded webm
-    searchStepSize    = 5                # Granularity/specificity of the loop search
-    numberWebmsToMake = 5                # How many webms we would like to make in total
-    minimumLoopFrames = 35               # The minimum number of frames in a webm
-    maximumLoopFrames = 165              # The maximum number of frames in a webm
+    start_time = float(start_time)
+    end_time = float(end_time)
+    duration = get_duration(path_of_source_video)
 
-    duration = getDuration(pathOfSourceVideo)
-
-    if not checkValidInterval(startTime, endTime, duration):
+    if not check_valid_interval(start_time, end_time, duration):
         raise InvalidIntervalException()
 
     # Create all the directories we'll need to store loops, frames, stabilization, etc
-    createDirectories(webmDestinationFolder, frameDirectoryPath, tempFramesFolder)
+    create_directories(webm_destination_folder, frame_directory_path, temp_frames_folder)
 
     # Get the frame rate so that we can then use it to calculate the number of frames
-    frameRate = getFrameRate(pathOfSourceVideo)
+    frame_rate = get_frame_rate(path_of_source_video)
 
-    if stabilizeEnabled:
-        # Stabilize the video using libvidstabdetect
-        stabilizeVideo(pathOfSourceVideo, loopWidth, stableVideoPath, startTime, endTime, safe_callback)
+    # Calculate the hashes we're going to iterate through
+    hash_dictionary, hashed_frames_list = hash_frames(path_of_source_video, safe_callback)
 
-    # Split the video into constituent frames so we can compare individual frames
-    splitVideoIntoFrames(frameDirectoryPath, stableVideoPath, safe_callback)
-
-    # Get a list of all frame names that we just created, then insert them into dictionary
-    frames = getFrameList(frameDirectoryPath)
-
-    # Calculate the hashes we're going to iterate through 
-    hashDictionary, hashedFramesList = hashFrames(searchStepSize, frames, safe_callback)
-    hashDb                           = FrameHashDatabase(hashDictionary)
+    hash_db = FrameHashDatabase(hash_dictionary, path_of_source_video)
 
     # Start searching the entire list of frames for loops, then add ffmpeg commands for each candidate
-    searchOptions      = (minimumLoopFrames, maximumLoopFrames, searchStepSize, SIMILARITY_THRESHOLD, frameRate)
-    bestWebmCandidates = searchForLoops(hashedFramesList, hashDb, searchOptions, safe_callback)
-    bestWebmCandidates = addInfoToCandidates(bestWebmCandidates, webmDestinationFolder, stableVideoPath, 
-                         frameDirectoryPath, soundEnabled)
+    best_webm_candidates = search_for_loops(hashed_frames_list, hash_db, frame_rate, safe_callback)
+    best_webm_candidates = add_info_to_candidates(best_webm_candidates, webm_destination_folder, path_of_source_video,
+                                                  frame_directory_path, sound_enabled)
 
     # Create some number of loops after search has finished
-    createCandidateLoops(bestWebmCandidates, numberWebmsToMake, tempFramesFolder, frameDirectoryPath, safe_callback)
+    create_candidate_loops(best_webm_candidates, safe_callback)
     
-    # Delete stable video, and all frames folders
-    cleanUpFolders(tempFramesFolder, frameDirectoryPath, pathOfSourceVideo, stableVideoPath)  
+    # Delete video, and all frames folders
+    clean_up_folders(temp_frames_folder, frame_directory_path, path_of_source_video)
 
-    results = getVideoInfoTuple(bestWebmCandidates, numberWebmsToMake, webmDestinationFolder)
+    results = get_video_info_tuple(best_webm_candidates, webm_destination_folder)
 
     return results
 
@@ -621,4 +605,4 @@ if __name__ == '__main__':
     # To profile, try `python -m cProfile -s cumtime loops.py Samples/sample.mp4`
     # Also see `profiling.md` for more info
     DEBUG_MODE = True
-    makeLoops(*sys.argv[1:])
+    make_loops(*sys.argv[1:])

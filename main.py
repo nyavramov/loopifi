@@ -1,17 +1,17 @@
 from datetime import datetime, timedelta
 from dateutil import rrule
 from flask import Flask, request, redirect, render_template, url_for, \
-    send_file, flash
+    flash
 from flask_migrate import Migrate
 from flask_rq2 import RQ
 from flask_sqlalchemy import SQLAlchemy
 from sentry_sdk.integrations.flask import FlaskIntegration
 
 from downloader import download_video
-from loops import makeLoops
+from loops import make_loops
 from parrots import random_parrot
+from logging_setup.logging_setup import get_logger
 
-import logging
 import re
 import sentry_sdk
 import shutil
@@ -19,8 +19,8 @@ import os
 
 ###############################################################################
 
-logging.basicConfig(level=os.environ.get('LOGLEVEL', 'INFO'))
-logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
 
 sentry_sdk.init(
     dsn="https://c9a949f71fee489795e1c655e08e2d7c@sentry.io/1314208",
@@ -109,7 +109,7 @@ class Record(db.Model):
 ###############################################################################
 
 
-@rq.job
+@rq.job(timeout=500)
 def loopify(_id, path, url=None, sound=True, stabilize=True):
     # define our callback for updating the job progress
     def update_record(status=None, progress=None):
@@ -144,22 +144,21 @@ def loopify(_id, path, url=None, sound=True, stabilize=True):
         record.status = 'Loopifying...'
         db.session.commit()
 
-        result = makeLoops(
+        result = make_loops(
             path,
             callback=update_record,
-            startTime=record.start_seconds,
-            endTime=record.end_seconds,
-            soundEnabled=sound,
-            stabilizeEnabled=stabilize
+            start_time=record.start_seconds,
+            end_time=record.end_seconds,
+            sound_enabled=sound
         )
 
         for r in result:
-            video = Video(webm_location=os.path.basename(r.webmLocation),
-                          gif_location=os.path.basename(r.gifLocation),
-                          mp4_location=os.path.basename(r.mp4Location),
+            video = Video(webm_location=os.path.basename(r.webm_location),
+                          gif_location=os.path.basename(r.gif_location),
+                          mp4_location=os.path.basename(r.mp4_location),
                           score=r.score,
-                          start_frame=r.startFrameNumber,
-                          end_frame=r.endFrameNumber,
+                          start_frame=r.start_frame_number,
+                          end_frame=r.end_frame_number,
                           record_id=record.id)
             db.session.add(video)
     except Exception as e:
@@ -262,8 +261,8 @@ def create():
         flash('Negative time difference between timestamps!')
         return redirect(url_for('index'))
 
-    if (endTotalSeconds - startTotalSeconds) > 30:
-        flash('Max 30s difference between timestamps!')
+    if (endTotalSeconds - startTotalSeconds) > 500:
+        flash('Max 5 minute difference between timestamps!')
         return redirect(url_for('index'))
 
     # valid request, proceed to create job

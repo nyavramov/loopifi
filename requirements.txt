@@ -29,6 +29,7 @@ MarkupSafe==1.0
 mccabe==0.6.1
 networkx==2.1
 numpy==1.15.2
+opencv-python==4.0.0.21
 parso==0.3.1
 Pillow==5.2.0
 pycodestyle==2.3.1
