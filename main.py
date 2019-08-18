@@ -261,7 +261,7 @@ def create():
         flash('Negative time difference between timestamps!')
         return redirect(url_for('index'))
 
-    if (endTotalSeconds - startTotalSeconds) > 500:
+    if (endTotalSeconds - startTotalSeconds) > 300:
         flash('Max 5 minute difference between timestamps!')
         return redirect(url_for('index'))
 
