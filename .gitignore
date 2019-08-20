@@ -7,3 +7,12 @@ lib64
 etc/
 include/
 share/
+
+loopifi/__pycache__
+loopifi/parrots/__pycache__
+loopifi/loops/__pycache__
+loopifi/logging_setup/__pycache__
+loopifi/downloader/__pycache__
+migrations/__pycache__
+__pycache__/
+loopifi.log
