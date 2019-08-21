@@ -4,11 +4,14 @@ import shutil
 import subprocess
 from collections import namedtuple
 
+# noinspection PyUnresolvedReferences, PyPackageRequirements
+import context
 import cv2
 import imagehash
 from PIL import Image
 from ntpath import basename
 from loopifi.logging_setup import get_logger
+
 
 logger = get_logger(__name__)
 
