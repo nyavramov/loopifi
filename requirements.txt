@@ -10,7 +10,7 @@ cffi==1.12.3
 Click==7.0
 cloudpickle==1.2.1
 croniter==0.3.30
-cryptography==2.7
+cryptography==3.2
 cycler==0.10.0
 dask==2.3.0
 decorator==4.4.0
