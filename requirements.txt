@@ -24,7 +24,7 @@ idna==2.8
 ImageHash==4.0
 itsdangerous==1.1.0
 jedi==0.15.1
-Jinja2==2.10.1
+Jinja2==2.11.3
 kiwisolver==1.1.0
 Mako==1.1.0
 MarkupSafe==1.1.1
