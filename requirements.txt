@@ -5,7 +5,7 @@ attrs==19.1.0
 autopep8==1.4.4
 black==19.3b0
 blinker==1.4
-certifi==2019.6.16
+certifi==2022.12.7
 cffi==1.12.3
 Click==7.0
 cloudpickle==1.2.1
